@@ -1,41 +1,26 @@
 const axios = require('axios');
 // HTTP 요청을 쉽게 보내기 위한 axios 모듈을 불러옴
 
-exports.test = async (req, res, next) => {
-// 토큰 테스트 라우터
-// 토큰 테스트를 위한 비동기 함수 정의, req는 요청 객체, res는 응답 객체, next는 다음 미들웨어로 전달하기 위한 함수임
+const URL = process.env.API_URL; // 환경 변수에서 API의 기본 URL을 가져옴
+axios.defaults.headers.origin = process.env.ORIGIN; // origin 헤더 설정
+
+// API 요청을 처리하는 비동기 함수
+const request = async (req, api) => {
     try {
         if (!req.session.jwt) { // 세션에 토큰(JWT)이 없으면 토큰 발급 시도
-            const tokenResult = await axios.post('https://localhost:8002/v1/token', {
-                clientSecret: process.env.CLIENT_SECRET,
-                // 환경 변수에서 클라이언트 비밀키를 가져와서 토큰 발급 요청에 포함
+            const tokenResult = await axios.post(`${URL}/token`, { // 새로운 토큰 요청
+                clientSecret: process.env.CLIENT_SECERT, // 클라이언트 비밀키 사용                 
             });
-            if (tokenResult.data?.code === 200) {
-            // 토큰 발급이 성공했는지 확인함, 응답 코드가 200이면 성공임
-                req.session.jwt = tokenResult.data.token;
-                // 발급받은 토큰을 세션에 저장함
-            } else {
-            // 토큰 발급에 실패한 경우
-                return res.json(tokenResult.data);
-                // 실패 사유를 JSON 형식으로 응답함
-            }
+            req.session.jwt = tokenResult.data.token; // 세션에 토큰 저장
         }
-        // 발급받은 토큰으로 테스트 요청을 수행함
-        const result = await axios.getAdapter('https://localhost:8002/v1/test', {
-            headers: { authorization: req.session.jwt },
-            //요청 헤더에 JWT를 포함하여 인증함
+        return await axios.getAdapter(`${URL}${api}`, { // API 요청
+            headers: { authorization: req.session.jwt }, // 요청 헤더에 JWT 포함    
         });
-        return res.json(result.data);
-        // 요청의 결과를 JSON 형식으로 응답함
-    } catch (err) {
-        console.error(err);
-        // 에러가 발생한 경우, 콘솔에 에러를 출력함
-        if (err.response?.status === 419) {
-        // 에러 응답의 상태 코드가 419일 경우, 보통 토큰 만료를 의미함
-            return res.json(err.response.data);
-            // 만료된 토큰의 에러 정보를 JSON 형식으로 응답함
+    } catch (error) {
+        if (err.response?.status === 419) { // 토큰 만료 시 처리
+            delete req.session.jwt; // 세션에서 JWT 삭제
+            return requset(req, api); // 새로운 토큰 요청 후 재시도
         }
-        return next(err);
-        // 기타 에러는 다음 미들웨어로 전달함
+        throw error; // 419 외의 다른 에러이면 에러 발생
     }
 };
